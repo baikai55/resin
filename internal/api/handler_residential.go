@@ -58,23 +58,24 @@ var residentialCache residentialStateCache
 // configured state directory and joins nothing. It never fails when the file is
 // absent so the UI can render an empty state before detection has run.
 func HandleResidentialState(envCfg *config.EnvConfig) http.HandlerFunc {
-	stateDir := ""
+	path := ""
 	if envCfg != nil {
-		stateDir = envCfg.StateDir
+		path = envCfg.ResidentialStateFile
+		if path == "" && envCfg.StateDir != "" {
+			path = filepath.Join(envCfg.StateDir, residentialStateFileName)
+		}
 	}
 
 	return func(w http.ResponseWriter, _ *http.Request) {
-		WriteJSON(w, http.StatusOK, loadResidentialState(stateDir))
+		WriteJSON(w, http.StatusOK, loadResidentialState(path))
 	}
 }
 
-func loadResidentialState(stateDir string) ResidentialStateResponse {
+func loadResidentialState(path string) ResidentialStateResponse {
 	empty := ResidentialStateResponse{Items: map[string]ResidentialEntry{}}
-	if stateDir == "" {
+	if path == "" {
 		return empty
 	}
-
-	path := filepath.Join(stateDir, residentialStateFileName)
 
 	info, err := os.Stat(path)
 	if err != nil {

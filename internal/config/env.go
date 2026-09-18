@@ -21,6 +21,9 @@ type EnvConfig struct {
 	StateDir string
 	LogDir   string
 
+	// Residential state override. Empty means "<StateDir>/residential_state.json".
+	ResidentialStateFile string
+
 	// Network
 	ListenAddress string
 
@@ -91,6 +94,7 @@ func LoadEnvConfig() (*EnvConfig, error) {
 	cfg.CacheDir = envStr("RESIN_CACHE_DIR", "/var/cache/resin")
 	cfg.StateDir = envStr("RESIN_STATE_DIR", "/var/lib/resin")
 	cfg.LogDir = envStr("RESIN_LOG_DIR", "/var/log/resin")
+	cfg.ResidentialStateFile = strings.TrimSpace(envStr("RESIN_RESIDENTIAL_STATE_FILE", ""))
 	cfg.ListenAddress = strings.TrimSpace(envStr("RESIN_LISTEN_ADDRESS", "0.0.0.0"))
 
 	// --- Ports ---
