@@ -740,6 +740,24 @@ Note: Once enabled, requests without authentication information are rejected ins
   "总请求": "Total requests",
   "最近错误：{{message}}": "Recent error: {{message}}",
   "配置已更新（{{count}} 项变更）": "Config updated ({{count}} changes)",
+  "ip 检测": "IP Check",
+  "按出口 IP 关联住宅检测结果，查看节点是否为家宽及其风险评分。":
+    "Join residential detection results by egress IP to inspect whether a node is residential and its risk score.",
+  "住宅检测列表": "Residential Detection",
+  "共 {{total}} 个节点，{{yes}} 个住宅 IP，{{unknown}} 个未知":
+    "{{total}} nodes, {{yes}} residential IPs, {{unknown}} unknown",
+  "状态更新时间 {{time}}": "State updated {{time}}",
+  "家宽": "Residential",
+  "评分": "Score",
+  "运营商": "ISP",
+  "来源": "Source",
+  "检测时间": "Detected At",
+  "是": "Yes",
+  "否": "No",
+  "未知": "Unknown",
+  "正在加载住宅检测数据...": "Loading residential detection data...",
+  "尚未生成住宅检测状态文件，请先运行检测脚本。":
+    "The residential detection state file has not been generated yet. Run the detection script first.",
 };
 
 export function translateDocumentTitle(locale: AppLocale): string {

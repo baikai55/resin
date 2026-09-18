@@ -128,6 +128,9 @@ func NewServerWithAddress(
 		authed.Handle("POST /api/v1/geoip/actions/update-now", HandleGeoIPUpdate(cp))
 	}
 
+	// Residential state (read-only, sourced from a mounted state file).
+	authed.Handle("GET /api/v1/residential", HandleResidentialState(envCfg))
+
 	// Request log endpoints (always registered if repo is available).
 	if requestlogRepo != nil {
 		authed.Handle("GET /api/v1/request-logs", HandleListRequestLogs(requestlogRepo))
