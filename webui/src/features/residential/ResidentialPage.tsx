@@ -15,10 +15,17 @@ import { formatDateTime, formatRelativeTime } from "../../lib/time";
 import { listNodes } from "../nodes/api";
 import { getAllRegions, getRegionName } from "../nodes/regions";
 import type { NodeSummary } from "../nodes/types";
+import { listPlatforms } from "../platforms/api";
+import type { Platform } from "../platforms/types";
+import { listSubscriptions } from "../subscriptions/api";
 import { getResidentialState } from "./api";
 import type { ResidentialEntry } from "./types";
 
 type ResidentialFilter = "all" | "yes" | "no" | "unknown";
+type StatusFilter = "all" | "healthy" | "circuit_open" | "error" | "disabled";
+type SourceFilter = "all" | "ip-api" | "ippure";
+
+const EMPTY_PLATFORMS: Platform[] = [];
 
 type ResidentialRow = NodeSummary & {
   residential?: ResidentialEntry;
@@ -98,19 +105,47 @@ export function ResidentialPage() {
   const [keyword, setKeyword] = useState("");
   const [region, setRegion] = useState("");
   const [residentialFilter, setResidentialFilter] = useState<ResidentialFilter>("all");
+  const [platformId, setPlatformId] = useState("");
+  const [subscriptionId, setSubscriptionId] = useState("");
+  const [egressIp, setEgressIp] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState<number>(200);
 
   const allRegions = getAllRegions();
 
+  const platformsQuery = useQuery({
+    queryKey: ["platforms", "all"],
+    queryFn: async () => {
+      const data = await listPlatforms({ limit: 100000, offset: 0 });
+      return data.items;
+    },
+    staleTime: 60_000,
+  });
+  const platforms = platformsQuery.data ?? EMPTY_PLATFORMS;
+
+  const subscriptionsQuery = useQuery({
+    queryKey: ["subscriptions", "all"],
+    queryFn: async () => {
+      const data = await listSubscriptions({ limit: 100000, offset: 0 });
+      return data.items;
+    },
+    staleTime: 60_000,
+  });
+  const subscriptions = subscriptionsQuery.data ?? [];
+
   const nodesQuery = useQuery({
-    queryKey: ["residential", "nodes"],
+    queryKey: ["residential", "nodes", platformId, subscriptionId, egressIp],
     queryFn: () =>
       listNodes({
         limit: 100000,
         offset: 0,
         sort_by: "region",
         sort_order: "asc",
+        platform_id: platformId || undefined,
+        subscription_id: subscriptionId || undefined,
+        egress_ip: egressIp || undefined,
       }),
     staleTime: 30_000,
     refetchInterval: 60_000,
@@ -157,9 +192,22 @@ export function ResidentialPage() {
       if (residentialFilter !== "all" && residentialKind(row.residential) !== residentialFilter) {
         return false;
       }
+      if (sourceFilter !== "all" && (row.residential?.source || "") !== sourceFilter) {
+        return false;
+      }
+      if (statusFilter !== "all") {
+        const status = nodeStatus(row);
+        if (statusFilter === "circuit_open") {
+          if (status !== "circuit_open" && status !== "pending_test") {
+            return false;
+          }
+        } else if (status !== statusFilter) {
+          return false;
+        }
+      }
       return true;
     });
-  }, [rows, keyword, region, residentialFilter]);
+  }, [rows, keyword, region, residentialFilter, sourceFilter, statusFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
   const safePage = Math.min(page, totalPages - 1);
@@ -172,6 +220,11 @@ export function ResidentialPage() {
     setKeyword("");
     setRegion("");
     setResidentialFilter("all");
+    setPlatformId("");
+    setSubscriptionId("");
+    setEgressIp("");
+    setStatusFilter("all");
+    setSourceFilter("all");
     setPage(0);
   };
 
@@ -259,6 +312,14 @@ export function ResidentialPage() {
         const ts = info.row.original.residential?.ts;
         if (!ts) return "-";
         return <span title={formatDateTime(ts)}>{formatRelativeTime(ts)}</span>;
+      },
+    }),
+    col.accessor("last_latency_probe_attempt", {
+      header: t("上次探测"),
+      cell: (info) => {
+        const val = info.getValue();
+        if (!val) return "-";
+        return <span title={formatDateTime(val)}>{formatRelativeTime(val)}</span>;
       },
     }),
     col.display({
@@ -357,6 +418,66 @@ export function ResidentialPage() {
             </div>
 
             <div style={FILTER_ITEM_STYLE}>
+              <label htmlFor="residential-platform" style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
+                {t("被此平台路由")}
+              </label>
+              <Select
+                id="residential-platform"
+                value={platformId}
+                onChange={(event) => {
+                  setPlatformId(event.target.value);
+                  setPage(0);
+                }}
+                style={FILTER_CONTROL_STYLE}
+              >
+                <option value="">{t("无限制")}</option>
+                {platforms.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+
+            <div style={FILTER_ITEM_STYLE}>
+              <label htmlFor="residential-subscription" style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
+                {t("来自此订阅")}
+              </label>
+              <Select
+                id="residential-subscription"
+                value={subscriptionId}
+                onChange={(event) => {
+                  setSubscriptionId(event.target.value);
+                  setPage(0);
+                }}
+                style={FILTER_CONTROL_STYLE}
+              >
+                <option value="">{t("全部")}</option>
+                {subscriptions.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+
+            <div style={FILTER_ITEM_STYLE}>
+              <label htmlFor="residential-egress-ip" style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
+                {t("出口 IP")}
+              </label>
+              <Input
+                id="residential-egress-ip"
+                value={egressIp}
+                onChange={(event) => {
+                  setEgressIp(event.target.value);
+                  setPage(0);
+                }}
+                placeholder="IP / CIDR"
+                style={FILTER_CONTROL_STYLE}
+              />
+            </div>
+
+            <div style={FILTER_ITEM_STYLE}>
               <label htmlFor="residential-kind" style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
                 {t("家宽")}
               </label>
@@ -373,6 +494,46 @@ export function ResidentialPage() {
                 <option value="yes">{t("是")}</option>
                 <option value="no">{t("否")}</option>
                 <option value="unknown">{t("未知")}</option>
+              </Select>
+            </div>
+
+            <div style={FILTER_ITEM_STYLE}>
+              <label htmlFor="residential-source" style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
+                {t("来源")}
+              </label>
+              <Select
+                id="residential-source"
+                value={sourceFilter}
+                onChange={(event) => {
+                  setSourceFilter(event.target.value as SourceFilter);
+                  setPage(0);
+                }}
+                style={FILTER_CONTROL_STYLE}
+              >
+                <option value="all">{t("全部")}</option>
+                <option value="ippure">ippure</option>
+                <option value="ip-api">ip-api</option>
+              </Select>
+            </div>
+
+            <div style={FILTER_ITEM_STYLE}>
+              <label htmlFor="residential-status" style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
+                {t("状态")}
+              </label>
+              <Select
+                id="residential-status"
+                value={statusFilter}
+                onChange={(event) => {
+                  setStatusFilter(event.target.value as StatusFilter);
+                  setPage(0);
+                }}
+                style={FILTER_CONTROL_STYLE}
+              >
+                <option value="all">{t("全部")}</option>
+                <option value="healthy">{t("健康")}</option>
+                <option value="circuit_open">{t("熔断 / 待测")}</option>
+                <option value="error">{t("错误")}</option>
+                <option value="disabled">{t("禁用")}</option>
               </Select>
             </div>
 
