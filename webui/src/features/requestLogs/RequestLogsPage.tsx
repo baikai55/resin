@@ -1,7 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { createColumnHelper } from "@tanstack/react-table";
-import { AlertTriangle, Eraser, RefreshCw, Sparkles, X } from "lucide-react";
+import { AlertTriangle, Eraser, Info, RefreshCw, Sparkles, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { Trans } from "react-i18next";
 import { Link } from "react-router-dom";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
@@ -16,6 +17,7 @@ import { useI18n } from "../../i18n";
 import { getCurrentLocale, isEnglishLocale } from "../../i18n/locale";
 import { formatBytes } from "../../lib/bytes";
 import { formatApiErrorMessage } from "../../lib/error-message";
+import { readPageSize, savePageSize } from "../../lib/page-size";
 import { formatDateTime } from "../../lib/time";
 import { getSystemConfig } from "../systemConfig/api";
 import { getRequestLog, getRequestLogPayloads, listRequestLogs } from "./api";
@@ -37,6 +39,8 @@ type FilterDraft = {
   limit: number;
 };
 
+type DebouncedTextFilters = Pick<FilterDraft, "platform_name" | "account" | "target_host" | "egress_ip" | "http_status">;
+
 const defaultFilters: FilterDraft = {
   from_local: "",
   to_local: "",
@@ -49,6 +53,7 @@ const defaultFilters: FilterDraft = {
   http_status: "",
   limit: 100,
 };
+const FILTER_DEBOUNCE_MS = 100;
 const PAGE_SIZE_OPTIONS = [20, 50, 100, 200, 500, 1000, 2000] as const;
 const REQUEST_LOGS_FORWARD_BADGE_CLASS = "request-logs-proxy-badge-forward";
 const REQUEST_LOGS_REVERSE_BADGE_CLASS = "request-logs-proxy-badge-reverse";
@@ -61,6 +66,62 @@ const BASE64_DECODE_FAILED = "[Base64 解码失败]";
 const UNSUPPORTED_CONTENT_ENCODING_PREFIX = "暂不支持的 Content-Encoding: ";
 const CONTENT_ENCODING_DECODE_FAILED_PREFIX = "Content-Encoding=";
 const CONTENT_ENCODING_DECODE_FAILED_SUFFIX = " 解压失败";
+const RELAY_NOT_RECORDED_HINT = "链式代理已启用，但本次请求未能记录线路节点。部分协议或连接建立失败时可能出现此情况。";
+
+function LogNodeInfo({ log }: { log: RequestLogItem }) {
+  const { t } = useI18n();
+  const renderNode = (tag: string, hash = "") => tag ? (
+    <Link
+      className="logs-node-name"
+      to={`/nodes?tag_keyword=${encodeURIComponent(tag)}`}
+      title={t("在节点池搜索 {{tag}}", { tag })}
+      onClick={(event) => event.stopPropagation()}
+    >
+      {tag}
+    </Link>
+  ) : (
+    <span className="logs-node-name" title={hash || undefined}>{hash ? hash.slice(0, 12) : "-"}</span>
+  );
+
+  return (
+    <div className="logs-cell-stack">
+      <div className="logs-node-path">{renderNode(log.node_tag)}</div>
+      <small className="logs-node-egress">
+        <span title={log.egress_ip}>{log.egress_ip || "-"}</span>
+        {log.chain_proxy ? (
+          log.relay_node_tag || log.relay_node_hash ? (
+            <span className="logs-relay-via">
+              <Trans
+                i18nKey="（经过 <node/>）"
+                components={{ node: renderNode(log.relay_node_tag, log.relay_node_hash) }}
+              />
+            </span>
+          ) : (
+            <span className="logs-relay-unrecorded">
+              <Trans
+                i18nKey="（经过链式代理<info/>）"
+                components={{
+                  info: (
+                    <span
+                      className="logs-relay-info"
+                      title={t(RELAY_NOT_RECORDED_HINT)}
+                      aria-label={t(RELAY_NOT_RECORDED_HINT)}
+                      role="img"
+                      tabIndex={0}
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <Info size={12} aria-hidden="true" />
+                    </span>
+                  ),
+                }}
+              />
+            </span>
+          )
+        ) : null}
+      </small>
+    </div>
+  );
+}
 
 function toRFC3339(localDateTime: string): string {
   if (!localDateTime) {
@@ -288,6 +349,16 @@ function buildActiveFilters(draft: FilterDraft): Omit<RequestLogListFilters, "cu
   };
 }
 
+function pickDebouncedTextFilters(filters: FilterDraft): DebouncedTextFilters {
+  return {
+    platform_name: filters.platform_name,
+    account: filters.account,
+    target_host: filters.target_host,
+    egress_ip: filters.egress_ip,
+    http_status: filters.http_status,
+  };
+}
+
 function proxyTypeLabel(proxyType: number): string {
   if (proxyType === 1) {
     return "HTTP 正向代理";
@@ -347,7 +418,13 @@ function splitDateTime(input: string): { date: string; time: string } {
 
 export function RequestLogsPage() {
   const { t } = useI18n();
-  const [filters, setFilters] = useState<FilterDraft>(defaultFilters);
+  const [filters, setFilters] = useState<FilterDraft>(() => ({
+    ...defaultFilters,
+    limit: readPageSize("request-logs", PAGE_SIZE_OPTIONS, defaultFilters.limit),
+  }));
+  const [debouncedTextFilters, setDebouncedTextFilters] = useState<DebouncedTextFilters>(() =>
+    pickDebouncedTextFilters(defaultFilters),
+  );
   const [cursorStack, setCursorStack] = useState<string[]>([""]);
   const [pageIndex, setPageIndex] = useState(0);
   const [selectedLogId, setSelectedLogId] = useState("");
@@ -366,7 +443,38 @@ export function RequestLogsPage() {
     staleTime: 60_000,
   });
 
-  const activeFilters = useMemo(() => buildActiveFilters(filters), [filters]);
+  useEffect(() => {
+    const timeoutID = window.setTimeout(() => {
+      setDebouncedTextFilters({
+        platform_name: filters.platform_name,
+        account: filters.account,
+        target_host: filters.target_host,
+        egress_ip: filters.egress_ip,
+        http_status: filters.http_status,
+      });
+    }, FILTER_DEBOUNCE_MS);
+    return () => window.clearTimeout(timeoutID);
+  }, [filters.account, filters.egress_ip, filters.http_status, filters.platform_name, filters.target_host]);
+
+  const queryFilters = useMemo<FilterDraft>(
+    () => ({
+      from_local: filters.from_local,
+      to_local: filters.to_local,
+      proxy_type: filters.proxy_type,
+      net_ok: filters.net_ok,
+      limit: filters.limit,
+      ...debouncedTextFilters,
+    }),
+    [
+      debouncedTextFilters,
+      filters.from_local,
+      filters.limit,
+      filters.net_ok,
+      filters.proxy_type,
+      filters.to_local,
+    ],
+  );
+  const activeFilters = useMemo(() => buildActiveFilters(queryFilters), [queryFilters]);
   const cursor = cursorStack[pageIndex] || "";
 
   const rangeInvalid = useMemo(() => {
@@ -446,7 +554,8 @@ export function RequestLogsPage() {
   };
 
   const resetFilters = () => {
-    setFilters(defaultFilters);
+    setFilters((previous) => ({ ...defaultFilters, limit: previous.limit }));
+    setDebouncedTextFilters(pickDebouncedTextFilters(defaultFilters));
     setCursorStack([""]);
     setPageIndex(0);
     setSelectedLogId("");
@@ -647,25 +756,7 @@ export function RequestLogsPage() {
         cell: (info) => {
           const log = info.row.original;
           return (
-            <div className="logs-cell-stack">
-              {log.node_tag ? (
-                <Link
-                  to={`/nodes?tag_keyword=${encodeURIComponent(log.node_tag)}`}
-                  title={t("在节点池搜索 {{tag}}", { tag: log.node_tag })}
-                  onClick={(event) => event.stopPropagation()}
-                  style={{
-                    color: "var(--accent-primary)",
-                    textDecoration: "none",
-                    width: "fit-content",
-                  }}
-                >
-                  {log.node_tag}
-                </Link>
-              ) : (
-                <span>-</span>
-              )}
-              <small title={log.egress_ip}>{log.egress_ip || "-"}</small>
-            </div>
+            <LogNodeInfo log={log} />
           );
         },
       }),
@@ -889,7 +980,10 @@ export function RequestLogsPage() {
           pageSize={filters.limit}
           pageSizeOptions={PAGE_SIZE_OPTIONS}
           disabled={isPageTransitioning}
-          onPageSizeChange={(limit) => updateFilter("limit", limit)}
+          onPageSizeChange={(limit) => {
+            savePageSize("request-logs", limit);
+            updateFilter("limit", limit);
+          }}
           onPrev={movePrev}
           onNext={moveNext}
         />
@@ -1057,8 +1151,13 @@ export function RequestLogsPage() {
 
                   <div>
                     <span>{t("节点")}</span>
-                    <p>{detailLog.node_tag || "-"}</p>
+                    <LogNodeInfo log={detailLog} />
                     <code style={{ display: 'block', marginTop: '4px', fontSize: '11px', color: 'var(--text-muted)', wordBreak: 'break-all' }}>{detailLog.node_hash || "-"}</code>
+                    {detailLog.chain_proxy && detailLog.relay_node_hash ? (
+                      <code className="muted" style={{ fontSize: "11px", wordBreak: "break-all" }}>
+                        {t("线路")}：{detailLog.relay_node_hash}
+                      </code>
+                    ) : null}
                   </div>
                 </div>
               </section>
@@ -1073,7 +1172,7 @@ export function RequestLogsPage() {
                   <p className="muted" style={{ fontSize: "13px" }}>{t("该条日志未记录报文内容。")}</p>
                 ) : (
                   <section className="logs-payload-section">
-                    <div className="logs-payload-tabs">
+                    <div className="segmented-control logs-payload-tabs">
                       {PAYLOAD_TABS.map((tab) => {
                         const labelMap: Record<PayloadTab, string> = {
                           request: t("请求"),
@@ -1090,7 +1189,8 @@ export function RequestLogsPage() {
                           <button
                             key={tab}
                             type="button"
-                            className={`payload-tab ${payloadTab === tab ? "payload-tab-active" : ""}`}
+                            className="segmented-control-option payload-tab"
+                            aria-pressed={payloadTab === tab}
                             onClick={() => setPayloadTab(tab)}
                           >
                             <span>{labelMap[tab]}</span>

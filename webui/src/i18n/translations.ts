@@ -231,6 +231,21 @@ Note: Once enabled, requests without authentication information are rejected ins
     "socks5h://user:pass@example.com:1080 (SOCKS5 + remote DNS)",
   "1.2.3.4:8080:user:pass（兼容简写）": "1.2.3.4:8080:user:pass (compat shorthand)",
   "临时订阅": "Temporary Subscription",
+  "链式代理": "Proxy chain",
+  "（经过 <node/>）": "(via <node/>)",
+  "（经过链式代理<info/>）": "(via proxy chain<info/>)",
+  "链式代理已启用，但本次请求未能记录线路节点。部分协议或连接建立失败时可能出现此情况。":
+    "Proxy chaining is enabled, but the relay was not recorded for this request. This can happen with some protocols or when connection setup fails.",
+  "线路": "Relay",
+  "线路：": "Relay: ",
+  "未分配": "Unassigned",
+  "落地": "Exit",
+  "允许作为线路节点": "Allow use as a relay node",
+  "仅通过线路节点落地": "Exit only through relay nodes",
+  "线路节点负责中转，落地节点负责最终出口。节点属于多个订阅时，线路节点设置优先。":
+    "Relay nodes provide transit; exit nodes provide the final outbound connection. Relay settings take priority for nodes shared by multiple subscriptions.",
+  "修改链式代理角色可能中断已有连接。": "Changing the proxy chain role may interrupt existing connections.",
+  "关": "Off",
   "临时节点驱逐延迟": "Temporary Node Eviction Delay",
   "平台列表": "Platform List",
   "平台详情": "Platform Details",
@@ -257,6 +272,8 @@ Note: Once enabled, requests without authentication information are rejected ins
   "出站连接": "Outbound Connections",
   "下载速率": "Download Rate",
   "上传速率": "Upload Rate",
+  "平均": "Avg",
+  "峰值": "Peak",
   "下载流量": "Download Traffic",
   "上传流量": "Upload Traffic",
   "流量累计": "Traffic Total",
@@ -363,11 +380,12 @@ Note: Once enabled, requests without authentication information are rejected ins
   "地区过滤规则": "Region filters",
   "地区过滤规则（可选）": "Region filters (optional)",
   "每行一条": "One per line",
-  "每行一条，例如 .*专线.* 或 <订阅名>/.*": "One per line, e.g. .*Dedicated.* or <SubscriptionName>/.*",
-  "技巧：<订阅名>/.* 可筛选来自该订阅的节点。":
-    "Tip: use <SubscriptionName>/.* to match nodes from that subscription.",
-  "满足所有正则表达式的节点才会被选择":
-    "Only nodes that satisfy all regex expressions will be selected.",
+  "每行一条正则表达式，例如：\n\n香港\n日本\n*专线\n!过期\n!失效\n\n表示：选择【香港】或【日本】的【专线】节点，并排除包含【过期】或【失效】的节点。":
+    "One regular expression per line, for example:\n\nHong Kong\nJapan\n*Dedicated\n!Expired\n!Invalid\n\nMeaning: select [Dedicated] nodes containing [Hong Kong] or [Japan], and exclude nodes containing [Expired] or [Invalid].",
+  "普通正则表达式表示满足其一，* 开头表示必须包含，! 开头表示排除。":
+    "Plain regular expressions are ORed; a leading * means required; a leading ! means excluded.",
+  "技巧：^<订阅名>/ 可筛选来自该订阅的节点。":
+    "Tip: use ^<SubscriptionName>/ to match nodes from that subscription.",
   "每行一条，如 hk / us": "One per line, e.g. hk / us",
   "每行一条，如 hk / us / !hk": "One per line, e.g. hk / us / !hk",
   "支持反选：以 ! 开头可排除地区（如 !hk）。可与正选混用，最终结果为“先正选再排除”。":
@@ -527,7 +545,7 @@ Note: Once enabled, requests without authentication information are rejected ins
   "实时连接数": "Realtime connections",
   "实时入站 / 出站连接": "Realtime inbound / outbound connections",
   "实时吞吐": "Realtime throughput",
-  "实时下载 / 上传速率（bps）": "Realtime download / upload rate (bps)",
+  "实时下载 / 上传速率（B/s）": "Realtime download / upload rate (B/s)",
   "输入 IP 后点击查询。": "Enter an IP and click query.",
   "数据缓存目录": "Data cache directory",
   "数据库保留阈值": "Database retention threshold",
@@ -564,7 +582,7 @@ Note: Once enabled, requests without authentication information are rejected ins
   "永久删除当前平台及其配置，操作不可撤销。":
     "Permanently delete this platform and its config. This action cannot be undone.",
   "正常": "Normal",
-  "未检查": "Not checked",
+  "检查中": "Checking",
   "正则": "Regex",
   "中文": "中文",
   "重新整理当前平台可用节点，不会修改配置。":
@@ -639,6 +657,7 @@ Note: Once enabled, requests without authentication information are rejected ins
   "搜索订阅": "Search subscriptions",
   "搜索规则": "Search rules",
   "搜索平台": "Search platforms",
+  "搜索账号": "Search accounts",
   "延迟测试目标 URL 必须是 http/https 地址":
     "Latency test target URL must be an http/https URL",
   "延迟测试目标 URL 不能为空": "Latency test target URL cannot be empty",
@@ -653,6 +672,7 @@ Note: Once enabled, requests without authentication information are rejected ins
     "View current lease bindings for this platform and release individual account leases.",
   "正在加载租约数据...": "Loading leases...",
   "当前平台暂无租约": "No leases for this platform",
+  "没有匹配的租约": "No matching leases",
   "重置、清租约、删除操作": "Reset, clear leases, and delete operations",
   "重建、重置、清租约、删除操作": "Rebuild, reset, clear leases, and delete operations",
   "立即清除当前平台的全部租约，下次请求将重新分配出口。":
@@ -736,7 +756,7 @@ Note: Once enabled, requests without authentication information are rejected ins
   "预览订阅 {{name}} 的节点池": "Preview node pool for subscription {{name}}",
   "在节点池搜索 {{tag}}": "Search node pool for {{tag}}",
   "总计": "Total",
-  "总流量": "Total traffic",
+  "窗口内总流量": "Total traffic in window",
   "总请求": "Total requests",
   "最近错误：{{message}}": "Recent error: {{message}}",
   "配置已更新（{{count}} 项变更）": "Config updated ({{count}} changes)",

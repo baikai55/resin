@@ -27,7 +27,9 @@ const (
 	stateVersionAddPassiveCircuitBreakerDisabled = 6
 	stateVersionAddEndpoints                     = 7
 	stateVersionAddEndpointEnabled               = 8
-	stateLatestVersion                           = stateVersionAddEndpointEnabled
+	stateVersionPlatformRegexFilterRules         = 9
+	stateVersionSubscriptionChainProxy           = 10
+	stateLatestVersion                           = stateVersionSubscriptionChainProxy
 	stateLegacyBaselineVersion                   = stateVersionAddFixedAccountHeader
 
 	stateBaseSchemaMigration = stateMigrationsPath + "/000001_state_base.up.sql"
